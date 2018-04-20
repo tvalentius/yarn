@@ -52,6 +52,7 @@ const messages = {
   verboseFileRemoveExtraneous: 'Removing extraneous file $0.',
   verboseFilePhantomExtraneous:
     "File $0 would be marked as extraneous but has been removed as it's listed as a phantom file.",
+  verboseFileSkipArtifact: 'Skipping copying of $0 as the file is marked as a built artifact and subject to change.',
   verboseFileFolder: 'Creating directory $0.',
 
   verboseRequestStart: 'Performing $0 request to $1.',
@@ -69,6 +70,7 @@ const messages = {
   couldntFindVersionThatMatchesRange: "Couldn't find any versions for $0 that matches $1",
   chooseVersionFromList: 'Please choose a version of $0 from this list:',
   moduleNotInManifest: "This module isn't specified in a manifest.",
+  moduleAlreadyInManifest: '$0 is already in $1. Please remove existing entry first before adding it to $2.',
   unknownFolderOrTarball: "Passed folder/tarball doesn't exist,",
   unknownPackage: "Couldn't find package $0.",
   unknownPackageName: "Couldn't find package name.",
@@ -79,7 +81,8 @@ const messages = {
   invalidVersion: 'Invalid version supplied.',
   requiredVersionInRange: 'Required version in range.',
   packageNotFoundRegistry: "Couldn't find package $0 on the $1 registry.",
-  doesntExist: "$0 doesn't exist.",
+  requiredPackageNotFoundRegistry: "Couldn't find package $0 required by $1 on the $2 registry.",
+  doesntExist: "Package $1 refers to a non-existing file '$0'.",
   missingRequiredPackageKey: `Package $0 doesn't have a $1.`,
   invalidAccess: 'Invalid argument for access, expected public or restricted.',
   invalidCommand: 'Invalid subcommand. Try $0',
@@ -87,6 +90,7 @@ const messages = {
   invalidHostedGitFragment: 'Invalid hosted git fragment $0.',
   invalidFragment: 'Invalid fragment $0.',
   invalidPackageName: 'Invalid package name.',
+  invalidPackageVersion: "Can't add $0: invalid package version $1.",
   couldntFindManifestIn: "Couldn't find manifest in $0.",
   shrinkwrapWarning:
     'npm-shrinkwrap.json found. This will not be updated or respected. See https://yarnpkg.com/en/docs/migrating-from-npm for more information.',
@@ -97,7 +101,7 @@ const messages = {
   ignoredScripts: 'Ignored scripts due to flag.',
   missingAddDependencies: 'Missing list of packages to add to your project.',
   yesWarning:
-    'The yes flag has been set. This will automatically answer yes to all questions which may have security implications.',
+    'The yes flag has been set. This will automatically answer yes to all questions, which may have security implications.',
   networkWarning:
     "You don't appear to have an internet connection. Try the --offline flag to use the cache for registry queries.",
   flatGlobalError:
@@ -112,19 +116,19 @@ const messages = {
   noPermission: 'Cannot create $0 due to insufficient permissions.',
   noGlobalFolder: 'Cannot find a suitable global folder. Tried these: $0',
   allDependenciesUpToDate: 'All of your dependencies are up to date.',
-  legendColorsForUpgradeInteractive:
+  legendColorsForVersionUpdates:
     'Color legend : \n $0    : Major Update backward-incompatible updates \n $1 : Minor Update backward-compatible features \n $2  : Patch Update backward-compatible bug fixes',
   frozenLockfileError: 'Your lockfile needs to be updated, but yarn was run with `--frozen-lockfile`.',
   fileWriteError: 'Could not write file $0: $1',
   multiplePackagesCantUnpackInSameDestination:
-    'Pattern $0 is trying to unpack in the same destination $1 as pattern $2. This could result in a non deterministic behavior, skipping.',
+    'Pattern $0 is trying to unpack in the same destination $1 as pattern $2. This could result in non-deterministic behavior, skipping.',
   incorrectLockfileEntry: 'Lockfile has incorrect entry for $0. Ignoring it.',
 
   invalidResolutionName: 'Resolution field $0 does not end with a valid package name and will be ignored',
   invalidResolutionVersion: 'Resolution field $0 has an invalid version entry and may be ignored',
   incompatibleResolutionVersion: 'Resolution field $0 is incompatible with requested version $1',
 
-  yarnOutdated: "Your current version of Yarn is out of date. The latest version is $0 while you're on $1.",
+  yarnOutdated: "Your current version of Yarn is out of date. The latest version is $0, while you're on $1.",
   yarnOutdatedInstaller: 'To upgrade, download the latest installer at $0.',
   yarnOutdatedCommand: 'To upgrade, run the following command:',
 
@@ -161,17 +165,18 @@ const messages = {
 
   binLinkCollision:
     "There's already a linked binary called $0 in your global Yarn bin. Could not link this package's $0 bin entry.",
-  linkCollision: "There's already a module called $0 registered.",
-  linkMissing: 'No registered module found called $0.',
+  linkCollision: "There's already a package called $0 registered.",
+  linkMissing: 'No registered package found called $0.',
   linkRegistered: 'Registered $0.',
   linkRegisteredMessage:
-    'You can now run `yarn link $0` in the projects where you want to use this module and it will be used instead.',
+    'You can now run `yarn link $0` in the projects where you want to use this package and it will be used instead.',
   linkUnregistered: 'Unregistered $0.',
   linkUnregisteredMessage:
-    'You can now run `yarn unlink $0` in the projects where you no longer want to use this module.',
-  linkUsing: 'Using linked module for $0.',
-  linkDisusing: 'Removed linked module $0.',
+    'You can now run `yarn unlink $0` in the projects where you no longer want to use this package.',
+  linkUsing: 'Using linked package for $0.',
+  linkDisusing: 'Removed linked package $0.',
   linkDisusingMessage: 'You will need to run `yarn` to re-install the package that was linked.',
+  linkTargetMissing: 'The target of linked package $0 is missing. Removing link.',
 
   createInvalidBin: 'Invalid bin entry found in package $0.',
   createMissingPackage:
@@ -179,9 +184,15 @@ const messages = {
 
   workspacesAddRootCheck:
     'Running this command will add the dependency to the workspace root rather than workspace itself, which might not be what you want - if you really meant it, make it explicit by running this command again with the -W flag (or --ignore-workspace-root-check).',
-  workspacesRequirePrivateProjects: 'Workspaces can only be enabled in private projects',
+  workspacesRequirePrivateProjects: 'Workspaces can only be enabled in private projects.',
+  workspacesSettingMustBeArray: 'The workspaces field in package.json must be an array.',
   workspacesDisabled:
     'Your project root defines workspaces but the feature is disabled in your Yarn config. Please check "workspaces-experimental" in your .yarnrc file.',
+
+  workspacesNohoistRequirePrivatePackages:
+    'nohoist config is ignored in $0 because it is not a private package. If you think nohoist should be allowed in public packages, please submit an issue for your use case.',
+  workspacesNohoistDisabled: `$0 defines nohoist but the feature is disabled in your Yarn config ("workspaces-nohoist-experimental" in .yarnrc file)`,
+
   workspaceRootNotFound: "Cannot find the root of your workspace - are you sure you're currently in a workspace?",
   workspaceMissingWorkspace: 'Missing workspace name.',
   workspaceMissingCommand: 'Missing command name.',
@@ -197,6 +208,8 @@ const messages = {
 
   execMissingCommand: 'Missing command name.',
 
+  noScriptsAvailable: 'There are no scripts specified inside package.json.',
+  noBinAvailable: 'There are no binary scripts available.',
   dashDashDeprecation: `From Yarn 1.0 onwards, scripts don't require "--" for options to be forwarded. In a future version, any explicit "--" will be forwarded as-is to the scripts.`,
   commandNotSpecified: 'No command specified.',
   binCommands: 'Commands available from binary scripts: ',
@@ -228,6 +241,8 @@ const messages = {
 
   savedNewDependency: 'Saved 1 new dependency.',
   savedNewDependencies: 'Saved $0 new dependencies.',
+  directDependencies: 'Direct dependencies',
+  allDependencies: 'All dependencies',
 
   foundWarnings: 'Found $0 warnings.',
   foundErrors: 'Found $0 errors.',
@@ -241,6 +256,7 @@ const messages = {
   invalidSemver: 'Invalid semver version',
   newVersion: 'New version',
   currentVersion: 'Current version',
+  noVersionOnPublish: 'Proceeding with current version',
 
   manualVersionResolution:
     'Unable to find a suitable version for $0, please choose one by typing one of the numbers below:',
@@ -267,12 +283,16 @@ const messages = {
   whyHoistedTo: `Has been hoisted to $0`,
 
   whyHoistedFromSimple: `This module exists because it's hoisted from $0.`,
+  whyNotHoistedSimple: `This module exists here because it's in the nohoist list $0.`,
   whyDependedOnSimple: `This module exists because $0 depends on it.`,
   whySpecifiedSimple: `This module exists because it's specified in $0.`,
   whyReasons: 'Reasons this module exists',
   whyHoistedFrom: 'Hoisted from $0',
+  whyNotHoisted: `in the nohoist list $0`,
   whyDependedOn: '$0 depends on it',
   whySpecified: `Specified in $0`,
+
+  whyMatch: `\r=> Found $0`,
 
   uninstalledPackages: 'Uninstalled packages.',
   uninstallRegenerate: 'Regenerating lockfile and installing missing dependencies',
@@ -304,8 +324,13 @@ const messages = {
   published: 'Published.',
   publishing: 'Publishing',
 
+  nonInteractiveNoVersionSpecified:
+    'You must specify a new version with --new-version when running with --non-interactive.',
+  nonInteractiveNoToken: "No token found and can't prompt for login when running with --non-interactive.",
+
   infoFail: 'Received invalid response from npm.',
   malformedRegistryResponse: 'Received malformed response from registry for $0. The registry may be down.',
+  registryNoVersions: 'No valid versions found for $0. The package may be unpublished.',
 
   cantRequestOffline: "Can't make a request in offline mode ($0)",
   requestManagerNotSetupHAR: 'RequestManager was not setup to capture HAR files',
@@ -323,10 +348,8 @@ const messages = {
 
   unknownFetcherFor: 'Unknown fetcher for $0',
 
-  refusingDownloadGitWithoutCommit: 'Refusing to download the git repo $0 over plain git without a commit hash',
-  refusingDownloadHTTPWithoutCommit: 'Refusing to download the git repo $0 over HTTP without a commit hash',
-  refusingDownloadHTTPSWithoutCommit:
-    'Refusing to download the git repo $0 over HTTPS without a commit hash - possible certificate error?',
+  downloadGitWithoutCommit: 'Downloading the git repo $0 over plain git without a commit hash',
+  downloadHTTPWithoutCommit: 'Downloading the git repo $0 over HTTP without a commit hash',
 
   packageInstalledWithBinaries: 'Installed $0 with binaries:',
   packageHasBinaries: '$0 has binaries:',
@@ -343,6 +366,7 @@ const messages = {
   integrityFailedFilesMissing: 'Integrity check: Files are missing',
   integrityPatternsDontMatch: "Integrity check: Top level patterns don't match",
   integrityModulesFoldersMissing: 'Integrity check: Some module folders are missing',
+  integritySystemParamsDontMatch: "Integrity check: System parameters don't match",
   packageNotInstalled: '$0 not installed',
   optionalDepNotInstalled: 'Optional dependency $0 not installed',
   packageWrongVersion: '$0 is wrong version: expected $1, got $2',
@@ -361,9 +385,16 @@ const messages = {
   deprecatedCommand: '$0 is deprecated. Please use $1.',
   deprecatedListArgs: 'Filtering by arguments is deprecated. Please use the pattern option instead.',
   implicitFileDeprecated:
-    'Using the "file:" protocol implicitly is deprecated. Please either the protocol or prepend the path $0 with "./".',
+    'Using the "file:" protocol implicitly is deprecated. Please either prepend the protocol or prepend the path $0 with "./".',
   unsupportedNodeVersion:
     'You are using Node $0 which is not supported and may encounter bugs or unexpected behavior. Yarn supports the following semver range: $1',
+
+  verboseUpgradeBecauseRequested: 'Considering upgrade of $0 to $1 because it was directly requested.',
+  verboseUpgradeBecauseOutdated: 'Considering upgrade of $0 to $1 because a newer version exists in the registry.',
+  verboseUpgradeNotUnlocking: 'Not unlocking $0 in the lockfile because it is a new or direct dependency.',
+  verboseUpgradeUnlocking: 'Unlocking $0 in the lockfile.',
+  folderMissing: "Directory $0 doesn't exist",
+  mutexPortBusy: 'Cannot use the network mutex on port $0. It is probably used by another app.',
 };
 
 export type LanguageKeys = $Keys<typeof messages>;

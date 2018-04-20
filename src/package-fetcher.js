@@ -24,7 +24,7 @@ async function fetchOne(ref: PackageReference, config: Config): Promise<FetchedM
   const dest = config.generateHardModulePath(ref);
 
   const remote = ref.remote;
-  // Mock metedata for symlinked dependencies
+  // Mock metadata for symlinked dependencies
   if (remote.type === 'link') {
     const mockPkg: Manifest = {_uid: '', name: '', version: '0.0.0'};
     return Promise.resolve({resolved: null, hash: '', dest, package: mockPkg, cached: false});
@@ -108,6 +108,18 @@ export function fetch(pkgs: Array<Manifest>, config: Config): Promise<Array<Mani
         // update with new remote
         // but only if there was a hash previously as the tarball fetcher does not provide a hash.
         if (ref.remote.hash) {
+          // if the checksum was updated, also update resolved and cache
+          if (ref.remote.hash !== res.hash && config.updateChecksums) {
+            const oldHash = ref.remote.hash;
+            if (ref.remote.resolved) {
+              ref.remote.resolved = ref.remote.resolved.replace(oldHash, res.hash);
+            }
+            ref.config.cache = Object.keys(ref.config.cache).reduce((cache, entry) => {
+              const entryWithNewHash = entry.replace(oldHash, res.hash);
+              cache[entryWithNewHash] = ref.config.cache[entry];
+              return cache;
+            }, {});
+          }
           ref.remote.hash = res.hash;
         }
       }

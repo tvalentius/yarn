@@ -6,6 +6,7 @@ import type PackageRequest from './package-request.js';
 import type {FetcherNames} from './fetchers/index.js';
 import type {Reporter} from './reporters/index.js';
 import type Config from './config.js';
+import type {RequestHint} from './constants';
 
 export type CLIFunction = (config: Config, reporter: Reporter, flags: Object, args: Array<string>) => CLIFunctionReturn;
 
@@ -18,7 +19,7 @@ export type DependencyRequestPattern = {
   pattern: string,
   registry: RegistryNames,
   optional: boolean,
-  hint?: ?string,
+  hint?: ?RequestHint,
   parentNames?: Array<string>,
   parentRequest?: ?PackageRequest,
   workspaceName?: string,
@@ -48,6 +49,11 @@ type Dependencies = {
   [key: string]: string,
 };
 
+export type WorkspacesConfig = {
+  packages?: Array<string>,
+  nohoist?: Array<string>,
+};
+
 // package.json
 export type Manifest = {
   _registry?: ?RegistryNames,
@@ -68,6 +74,7 @@ export type Manifest = {
   flat?: boolean,
   license?: string,
   licenseText?: string,
+  noticeText?: string,
 
   readme?: string,
   readmeFilename?: string,
@@ -129,12 +136,14 @@ export type Manifest = {
   files?: Array<string>,
   main?: string,
 
-  workspaces?: Array<string>,
+  workspaces?: Array<string> | WorkspacesConfig,
 
   // This flag is true when we add a new package with `yarn add <mypackage>`.
   // We need to preserve the flag because we print a list of new packages in
   // the end of the add command
   fresh?: boolean,
+
+  prebuiltVariants?: {[filename: string]: string},
 };
 
 //

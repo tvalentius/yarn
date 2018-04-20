@@ -1,6 +1,7 @@
 /* @flow */
 
 import type {Dependency, DependencyRequestPattern, Manifest} from './types.js';
+import type {FetcherNames} from './fetchers/index.js';
 import type PackageResolver from './package-resolver.js';
 import type {Reporter} from './reporters/index.js';
 import type Config from './config.js';
@@ -36,11 +37,14 @@ export default class PackageRequest {
     this.reporter = resolver.reporter;
     this.resolver = resolver;
     this.optional = req.optional;
+    this.hint = req.hint;
     this.pattern = req.pattern;
     this.config = resolver.config;
     this.foundInfo = null;
+  }
 
-    resolver.usedRegistries.add(req.registry);
+  init() {
+    this.resolver.usedRegistries.add(this.registry);
   }
 
   parentRequest: ?PackageRequest;
@@ -52,16 +56,18 @@ export default class PackageRequest {
   config: Config;
   registry: ResolverRegistryNames;
   optional: boolean;
+  hint: ?constants.RequestHint;
   foundInfo: ?Manifest;
 
-  getLocked(remoteType: string): ?Object {
+  getLocked(remoteType: FetcherNames): ?Manifest {
     // always prioritise root lockfile
     const shrunk = this.lockfile.getLocked(this.pattern);
 
     if (shrunk && shrunk.resolved) {
       const resolvedParts = versionUtil.explodeHashedUrl(shrunk.resolved);
-      // If it's a private git url set remote to 'git'.
-      const preferredRemoteType = resolvedParts.url.startsWith('git+ssh://') ? 'git' : remoteType;
+
+      // Detect Git protocols (git://HOST/PATH or git+PROTOCOL://HOST/PATH)
+      const preferredRemoteType = /^git(\+[a-z0-9]+)?:\/\//.test(resolvedParts.url) ? 'git' : remoteType;
 
       return {
         name: shrunk.name,
@@ -74,8 +80,9 @@ export default class PackageRequest {
           hash: resolvedParts.hash,
           registry: shrunk.registry,
         },
-        optionalDependencies: shrunk.optionalDependencies,
-        dependencies: shrunk.dependencies,
+        optionalDependencies: shrunk.optionalDependencies || {},
+        dependencies: shrunk.dependencies || {},
+        prebuiltVariants: shrunk.prebuiltVariants || {},
       };
     } else {
       return null;
@@ -108,7 +115,18 @@ export default class PackageRequest {
 
     const Resolver = this.getRegistryResolver();
     const resolver = new Resolver(this, name, range);
-    return resolver.resolve();
+    try {
+      return await resolver.resolve();
+    } catch (err) {
+      // if it is not an error thrown by yarn and it has a parent request,
+      // thow a more readable error
+      if (!(err instanceof MessageError) && this.parentRequest && this.parentRequest.pattern) {
+        throw new MessageError(
+          this.reporter.lang('requiredPackageNotFoundRegistry', pattern, this.parentRequest.pattern, this.registry),
+        );
+      }
+      throw err;
+    }
   }
 
   /**
@@ -205,6 +223,10 @@ export default class PackageRequest {
     // find version info for this package pattern
     const info: Manifest = await this.findVersionInfo();
 
+    if (!semver.valid(info.version)) {
+      throw new MessageError(this.reporter.lang('invalidPackageVersion', info.name, info.version));
+    }
+
     info.fresh = fresh;
     cleanDependencies(info, false, this.reporter, () => {
       // swallow warnings
@@ -268,6 +290,7 @@ export default class PackageRequest {
       deps.push(depPattern);
       promises.push(
         this.resolver.find({
+          hint: 'optional',
           pattern: depPattern,
           registry: remote.registry,
           optional: true,
@@ -283,6 +306,7 @@ export default class PackageRequest {
         deps.push(depPattern);
         promises.push(
           this.resolver.find({
+            hint: 'dev',
             pattern: depPattern,
             registry: remote.registry,
             optional: false,
@@ -352,8 +376,11 @@ export default class PackageRequest {
 
     // filter the list down to just the packages requested.
     // prevents us from having to query the metadata for all packages.
-    if (filterByPatterns && filterByPatterns.length) {
-      const filterByNames = filterByPatterns.map(pattern => normalizePattern(pattern).name);
+    if ((filterByPatterns && filterByPatterns.length) || (flags && flags.pattern)) {
+      const filterByNames =
+        filterByPatterns && filterByPatterns.length
+          ? filterByPatterns.map(pattern => normalizePattern(pattern).name)
+          : [];
       depReqPatterns = depReqPatterns.filter(
         dep =>
           filterByNames.indexOf(normalizePattern(dep.pattern).name) >= 0 ||
@@ -401,9 +428,8 @@ export default class PackageRequest {
 
     // Make sure to always output `exotic` versions to be compatible with npm
     const isDepOld = ({current, latest, wanted}) =>
-      latest === 'exotic' || (latest !== 'exotic' && (semver.lt(current, wanted) || semver.lt(current, latest)));
+      latest === 'exotic' || (semver.lt(current, wanted) || semver.lt(current, latest));
     const orderByName = (depA, depB) => depA.name.localeCompare(depB.name);
-
     return deps.filter(isDepOld).sort(orderByName);
   }
 }

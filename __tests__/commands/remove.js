@@ -147,9 +147,7 @@ test.concurrent('removes package installed without a manifest', (): Promise<void
 });
 
 test.concurrent('removes from workspace packages', async () => {
-  await runInstall({}, 'workspaces-install-basic', async (config): Promise<void> => {
-    const reporter = new ConsoleReporter({});
-
+  await runInstall({}, 'workspaces-install-basic', async (config, reporter): Promise<void> => {
     expect(await fs.exists(`${config.cwd}/node_modules/isarray`)).toEqual(true);
     expect(await fs.exists(`${config.cwd}/workspace-child/node_modules/isarray`)).toEqual(false);
 
@@ -169,5 +167,31 @@ test.concurrent('removes from workspace packages', async () => {
 
     expect(lockFileLines).toHaveLength(9);
     expect(lockFileLines[0]).toEqual('left-pad@1.1.3:');
+  });
+});
+
+test.concurrent('preserves unaffected bin links after removing workspace packages', async () => {
+  await runInstall({binLinks: true}, 'workspaces-install-bin', async (config, reporter): Promise<void> => {
+    expect(await fs.exists(`${config.cwd}/node_modules/.bin/rimraf`)).toEqual(true);
+    expect(await fs.exists(`${config.cwd}/node_modules/.bin/touch`)).toEqual(true);
+    expect(await fs.exists(`${config.cwd}/node_modules/.bin/workspace-1`)).toEqual(true);
+    expect(await fs.exists(`${config.cwd}/packages/workspace-2/node_modules/.bin/rimraf`)).toEqual(true);
+    expect(await fs.exists(`${config.cwd}/packages/workspace-2/node_modules/.bin/workspace-1`)).toEqual(true);
+
+    // remove package
+    const childConfig = await makeConfigFromDirectory(`${config.cwd}/packages/workspace-1`, reporter, {binLinks: true});
+    await remove(childConfig, reporter, {}, ['left-pad']);
+    await check(childConfig, reporter, {verifyTree: true}, []);
+
+    expect(
+      JSON.parse(await fs.readFile(path.join(config.cwd, 'packages/workspace-1/package.json'))).devDependencies,
+    ).toEqual({});
+
+    // bin links should be preserved
+    expect(await fs.exists(`${config.cwd}/node_modules/.bin/rimraf`)).toEqual(true);
+    expect(await fs.exists(`${config.cwd}/node_modules/.bin/touch`)).toEqual(true);
+    expect(await fs.exists(`${config.cwd}/node_modules/.bin/workspace-1`)).toEqual(true);
+    expect(await fs.exists(`${config.cwd}/packages/workspace-2/node_modules/.bin/rimraf`)).toEqual(true);
+    expect(await fs.exists(`${config.cwd}/packages/workspace-2/node_modules/.bin/workspace-1`)).toEqual(true);
   });
 });

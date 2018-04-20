@@ -11,6 +11,7 @@ import colorizeDiff from '../../util/colorize-diff.js';
 export const requireLockfile = true;
 
 export function setFlags(commander: Object) {
+  commander.description('Checks for outdated package dependencies.');
   commander.usage('outdated [packages ...]');
 }
 
@@ -30,7 +31,7 @@ export async function run(config: Config, reporter: Reporter, flags: Object, arg
   }
 
   const getNameFromHint = hint => (hint ? `${hint}Dependencies` : 'dependencies');
-  const colorizeName = ({current, wanted, name}) => reporter.format[colorForVersions(current, wanted)](name);
+  const colorizeName = ({current, latest, name}) => reporter.format[colorForVersions(current, latest)](name);
 
   if (deps.length) {
     const usesWorkspaces = !!config.workspaceRootFolder;
@@ -39,7 +40,7 @@ export async function run(config: Config, reporter: Reporter, flags: Object, arg
         colorizeName(info),
         info.current,
         colorizeDiff(info.current, info.wanted, reporter),
-        reporter.format.magenta(info.latest),
+        reporter.format.cyan(info.latest),
         info.workspaceName || '',
         getNameFromHint(info.hint),
         reporter.format.cyan(info.url),
@@ -50,11 +51,17 @@ export async function run(config: Config, reporter: Reporter, flags: Object, arg
       return row;
     });
 
+    const red = reporter.format.red('<red>');
+    const yellow = reporter.format.yellow('<yellow>');
+    const green = reporter.format.green('<green>');
+    reporter.info(reporter.lang('legendColorsForVersionUpdates', red, yellow, green));
+
     const header = ['Package', 'Current', 'Wanted', 'Latest', 'Workspace', 'Package Type', 'URL'];
     if (!usesWorkspaces) {
       header.splice(4, 1);
     }
     reporter.table(header, body);
+
     return 1;
   }
   return 0;

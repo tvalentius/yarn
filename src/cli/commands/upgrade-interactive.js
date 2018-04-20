@@ -6,15 +6,17 @@ import type Config from '../../config.js';
 import inquirer from 'inquirer';
 import Lockfile from '../../lockfile';
 import {Add} from './add.js';
-import {getOutdated} from './upgrade.js';
+import {getOutdated, cleanLockfile} from './upgrade.js';
 import colorForVersions from '../../util/color-for-versions';
 import colorizeDiff from '../../util/colorize-diff.js';
+import {Install} from './install.js';
 
 const path = require('path');
 
 export const requireLockfile = true;
 
 export function setFlags(commander: Object) {
+  commander.description('Provides an easy way to update outdated packages.');
   commander.usage('upgrade-interactive [flags]');
   commander.option('-S, --scope <scope>', 'upgrade packages under the specified scope');
   commander.option('--latest', 'list the latest version of packages, ignoring version ranges in package.json');
@@ -138,7 +140,7 @@ export async function run(config: Config, reporter: Reporter, flags: Object, arg
     const red = reporter.format.red('<red>');
     const yellow = reporter.format.yellow('<yellow>');
     const green = reporter.format.green('<green>');
-    reporter.info(reporter.lang('legendColorsForUpgradeInteractive', red, yellow, green));
+    reporter.info(reporter.lang('legendColorsForVersionUpdates', red, yellow, green));
 
     const answers: Array<Dependency> = await reporter.prompt('Choose which packages to update.', choices, {
       name: 'packages',
@@ -159,21 +161,25 @@ export async function run(config: Config, reporter: Reporter, flags: Object, arg
       flags.workspaceRootIsCwd = false;
       const deps = answers.filter(isHint(hint));
       if (deps.length) {
+        const install = new Install(flags, config, reporter, lockfile);
+        const {requests: packagePatterns} = await install.fetchRequestFromCwd();
         const depsByWorkspace = deps.reduce((acc, dep) => {
           const {workspaceLoc} = dep;
           const xs = acc[workspaceLoc] || [];
           acc[workspaceLoc] = xs.concat(dep);
           return acc;
         }, {});
+        const cwd = config.cwd;
         for (const loc of Object.keys(depsByWorkspace)) {
           const patterns = depsByWorkspace[loc].map(getPattern);
-          for (const pattern of patterns) {
-            lockfile.removePattern(pattern);
-          }
+          cleanLockfile(lockfile, deps, packagePatterns, reporter);
           reporter.info(reporter.lang('updateInstalling', getNameFromHint(hint)));
-          config.cwd = path.resolve(path.dirname(loc));
+          if (loc !== '') {
+            config.cwd = path.resolve(path.dirname(loc));
+          }
           const add = new Add(patterns, flags, config, reporter, lockfile);
           await add.init();
+          config.cwd = cwd;
         }
       }
     }

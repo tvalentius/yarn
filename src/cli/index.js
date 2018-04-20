@@ -23,6 +23,7 @@ import {getRcConfigForCwd, getRcArgs} from '../rc.js';
 import {spawnp, forkp} from '../util/child.js';
 import {version} from '../util/yarn-version.js';
 import handleSignals from '../util/signal-handler.js';
+import {boolify, boolifyWithDefault} from '../util/conversion.js';
 
 function findProjectRoot(base: string): string {
   let prev = null;
@@ -39,8 +40,6 @@ function findProjectRoot(base: string): string {
 
   return base;
 }
-
-const boolify = val => val.toString().toLowerCase() !== 'false' && val !== '0';
 
 export function main({
   startArgs,
@@ -61,7 +60,7 @@ export function main({
   commander.option('--offline', 'trigger an error if any required dependencies are not available in local cache');
   commander.option('--prefer-offline', 'use network only if dependencies are not available in local cache');
   commander.option('--strict-semver');
-  commander.option('--json', '');
+  commander.option('--json', 'format Yarn log messages as lines of JSON (see jsonlines.org)');
   commander.option('--ignore-scripts', "don't run lifecycle scripts");
   commander.option('--har', 'save HAR output of network traffic');
   commander.option('--ignore-platform', 'ignore platform checks');
@@ -76,6 +75,7 @@ export function main({
   commander.option('--no-lockfile', "don't read or generate a lockfile");
   commander.option('--pure-lockfile', "don't generate a lockfile");
   commander.option('--frozen-lockfile', "don't generate a lockfile and fail if an update is needed");
+  commander.option('--update-checksums', 'update package checksums from current repository');
   commander.option('--link-duplicates', 'create hardlinks to the repeated modules in node_modules');
   commander.option('--link-folder <path>', 'specify a custom folder to store global links');
   commander.option('--global-folder <path>', 'specify a custom folder to store global packages');
@@ -163,15 +163,24 @@ export function main({
   const command = commands[commandName];
 
   let warnAboutRunDashDash = false;
-  // we are using "yarn <script> -abc" or "yarn run <script> -abc", we want -abc to be script options, not yarn options
-  if (command === commands.run) {
+  // we are using "yarn <script> -abc", "yarn run <script> -abc", or "yarn node -abc", we want -abc
+  // to be script options, not yarn options
+  const PROXY_COMMANDS = new Set([`run`, `create`, `node`]);
+  if (PROXY_COMMANDS.has(commandName)) {
     if (endArgs.length === 0) {
-      endArgs = ['--', ...args.splice(1)];
+      // the "run" and "create" command take one argument that we want to parse as usual (the
+      // script/package name), hence the splice(1)
+      if (command === commands.run || command === commands.create) {
+        endArgs = ['--', ...args.splice(1)];
+      } else {
+        endArgs = ['--', ...args];
+      }
     } else {
       warnAboutRunDashDash = true;
     }
   }
 
+  commander.originalArgs = args;
   args = [...preCommandArgs, ...args];
 
   command.setFlags(commander);
@@ -196,7 +205,8 @@ export function main({
     emoji: process.stdout.isTTY && commander.emoji,
     verbose: commander.verbose,
     noProgress: !commander.progress,
-    isSilent: process.env.YARN_SILENT === '1' || commander.silent,
+    isSilent: boolifyWithDefault(process.env.YARN_SILENT, false) || commander.silent,
+    nonInteractive: commander.nonInteractive,
   });
 
   const exit = exitCode => {
@@ -207,9 +217,10 @@ export function main({
   reporter.initPeakMemoryCounter();
 
   const config = new Config(reporter);
-  const outputWrapper = !commander.json && command.hasWrapper(commander, commander.args);
+  const outputWrapperEnabled = boolifyWithDefault(process.env.YARN_WRAP_OUTPUT, true);
+  const shouldWrapOutput = outputWrapperEnabled && !commander.json && command.hasWrapper(commander, commander.args);
 
-  if (outputWrapper) {
+  if (shouldWrapOutput) {
     reporter.header(commandName, {name: 'yarn', version});
   }
 
@@ -243,7 +254,7 @@ export function main({
     }
 
     return command.run(config, reporter, commander, commander.args).then(exitCode => {
-      if (outputWrapper) {
+      if (shouldWrapOutput) {
         reporter.footer(false);
       }
       return exitCode;
@@ -276,6 +287,7 @@ export function main({
     return new Promise((resolve, reject) => {
       const connectionOptions = {
         port: +mutexPort || constants.SINGLE_INSTANCE_PORT,
+        host: 'localhost',
       };
 
       function startServer() {
@@ -367,8 +379,14 @@ export function main({
           });
 
           response.on('end', () => {
-            const {cwd, pid} = JSON.parse(Buffer.concat(buffers).toString());
-            reporter.warn(reporter.lang('waitingNamedInstance', pid, cwd));
+            try {
+              const {cwd, pid} = JSON.parse(Buffer.concat(buffers).toString());
+              reporter.warn(reporter.lang('waitingNamedInstance', pid, cwd));
+            } catch (error) {
+              reporter.verbose(error);
+              reject(new Error(reporter.lang('mutexPortBusy', connectionOptions.port)));
+              return;
+            }
             waitForTheNetwork();
           });
 
@@ -410,6 +428,8 @@ export function main({
     log.push(`Node version: ${indent(process.versions.node)}`);
     log.push(`Platform: ${indent(process.platform + ' ' + process.arch)}`);
 
+    log.push(`Trace: ${indent(err.stack)}`);
+
     // add manifests
     for (const registryName of registryNames) {
       const possibleLoc = path.join(config.cwd, registries[registryName].filename);
@@ -424,8 +444,6 @@ export function main({
     );
     const lockfile = fs.existsSync(lockLoc) ? fs.readFileSync(lockLoc, 'utf8') : 'No lockfile';
     log.push(`Lockfile: ${indent(lockfile)}`);
-
-    log.push(`Trace: ${indent(err.stack)}`);
 
     const errorReportLoc = writeErrorReport(log);
 
@@ -451,7 +469,7 @@ export function main({
     return errorReportLoc;
   }
 
-  const cwd = findProjectRoot(commander.cwd);
+  const cwd = command.shouldRunInCurrentCwd ? commander.cwd : findProjectRoot(commander.cwd);
 
   config
     .init({
@@ -479,6 +497,7 @@ export function main({
       networkTimeout: commander.networkTimeout,
       nonInteractive: commander.nonInteractive,
       scriptsPrependNodePath: commander.scriptsPrependNodePath,
+      updateChecksums: commander.updateChecksums,
     })
     .then(() => {
       // lockfile check must happen after config.init sets lockfileFolder
@@ -541,7 +560,7 @@ async function start(): Promise<void> {
   const rc = getRcConfigForCwd(process.cwd());
   const yarnPath = rc['yarn-path'];
 
-  if (yarnPath && process.env.YARN_IGNORE_PATH !== '1') {
+  if (yarnPath && !boolifyWithDefault(process.env.YARN_IGNORE_PATH, false)) {
     const argv = process.argv.slice(2);
     const opts = {stdio: 'inherit', env: Object.assign({}, process.env, {YARN_IGNORE_PATH: 1})};
     let exitCode = 0;
@@ -554,9 +573,9 @@ async function start(): Promise<void> {
       } catch (error) {
         throw firstError;
       }
-
-      process.exitCode = exitCode;
     }
+
+    process.exitCode = exitCode;
   } else {
     // ignore all arguments after a --
     const doubleDashIndex = process.argv.findIndex(element => element === '--');
